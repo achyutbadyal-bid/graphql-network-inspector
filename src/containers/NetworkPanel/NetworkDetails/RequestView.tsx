@@ -12,6 +12,7 @@ import {
 } from "@/hooks/useRequestViewSections"
 import { CaretIcon } from "../../../components/Icons/CaretIcon"
 import { ShareButton } from "../../../components/ShareButton"
+import { INetworkRequest } from "@/hooks/useNetworkMonitor"
 
 const isVariablesPopulated = (variables: Record<string, unknown>) => {
   return Object.keys(variables || {}).length > 0
@@ -45,10 +46,11 @@ interface IRequestViewProps {
   autoFormat: boolean
   requests: IGraphqlRequestBody[]
   onShare?: () => void
+  networkRequest?: INetworkRequest
 }
 
 export const RequestView = (props: IRequestViewProps) => {
-  const { requests, autoFormat, onShare } = props
+  const { requests, autoFormat, onShare, networkRequest } = props
 
   const numberOfRequests = requests.length
   const shouldDisplayRequestIndex = numberOfRequests > 1
@@ -64,6 +66,7 @@ export const RequestView = (props: IRequestViewProps) => {
             index={shouldDisplayRequestIndex && index + 1}
             numberOfRequests={numberOfRequests}
             onShare={onShare}
+            networkRequest={networkRequest}
           />
         )
       })}
@@ -77,10 +80,49 @@ interface ISingleRequestViewProps {
   index: number | false
   numberOfRequests: number
   onShare?: () => void
+  networkRequest?: INetworkRequest
+}
+
+const generateCurl = (
+  networkRequest?: INetworkRequest,
+  request?: IGraphqlRequestBody
+) => {
+  if (!networkRequest || !request) return ""
+
+  let curl = `curl '${networkRequest.url}'`
+  curl += " --compressed"
+
+  networkRequest.request.headers.forEach((header) => {
+    if (
+      !header.name.startsWith(":") &&
+      header.name.toLowerCase() !== "content-length"
+    ) {
+      const escapedValue = (header.value || "").replace(/'/g, "'\\''")
+      curl += ` \\\n  -H '${header.name}: ${escapedValue}'`
+    }
+  })
+
+  if (networkRequest.method !== "GET") {
+    const { id, ...rest } = request
+    const payload = JSON.stringify(
+      networkRequest.request.body.length > 1 ? [rest] : rest
+    )
+
+    curl += ` \\\n  --data-raw '${payload.replace(/'/g, "'\\''")}'`
+  }
+
+  return curl
 }
 
 const SingleRequestView = (props: ISingleRequestViewProps) => {
-  const { request, autoFormat, index, numberOfRequests, onShare } = props
+  const {
+    request,
+    autoFormat,
+    index,
+    numberOfRequests,
+    onShare,
+    networkRequest,
+  } = props
 
   const displayQuery = !!request.query
   const variables = getVariables(request)
@@ -91,6 +133,12 @@ const SingleRequestView = (props: ISingleRequestViewProps) => {
     <PanelSection className="relative mb-3">
       <div className="flex items-center gap-2 absolute top-[8px] right-[8px] z-10 transition-opacity">
         {onShare && <ShareButton onClick={onShare} />}
+        {networkRequest && (
+          <CopyButton
+            label="Copy as cURL"
+            textToCopy={generateCurl(networkRequest, request)}
+          />
+        )}
         {displayQuery && (
           <CopyButton label="Copy Query" textToCopy={request.query} />
         )}
